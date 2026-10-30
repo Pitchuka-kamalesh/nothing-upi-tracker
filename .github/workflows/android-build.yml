@@ -1,4 +1,3 @@
-
 name: Build Nothing UPI Tracker APK
 
 on:
@@ -24,11 +23,15 @@ jobs:
           java-version: '17'
 
       - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
+        run: |
+          echo "ANDROID_HOME=$ANDROID_HOME" >> $GITHUB_ENV
+          yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses
+          $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager \
+            "platform-tools" "platforms;android-35" "build-tools;35.0.0"
 
       - name: Extract project
         run: |
-          mkdir android-project
+          mkdir -p android-project
           unzip -q NothingUPITracker-AndroidStudio.zip -d android-project
 
       - name: Setup Gradle
@@ -37,9 +40,8 @@ jobs:
           gradle-version: '8.9'
 
       - name: Build APK
-        run: |
-          cd android-project
-          gradle --no-daemon assembleDebug
+        working-directory: android-project
+        run: gradle --no-daemon assembleDebug
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
