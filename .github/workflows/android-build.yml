@@ -1,8 +1,11 @@
-name: Build Nothing UPI Tracker APK
+
+name: DotLedger Signed APK Build
 
 on:
   push:
-    branches: [main]
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
   workflow_dispatch:
 
 permissions:
@@ -12,8 +15,11 @@ jobs:
   build:
     runs-on: ubuntu-latest
 
+    env:
+      ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+
     steps:
-      - name: Checkout
+      - name: Checkout source
         uses: actions/checkout@v4
 
       - name: Setup Java
@@ -23,31 +29,47 @@ jobs:
           java-version: '17'
 
       - name: Setup Android SDK
-        run: |
-          echo "ANDROID_HOME=$ANDROID_HOME" >> $GITHUB_ENV
-          yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses
-          $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager \
-            "platform-tools" "platforms;android-35" "build-tools;35.0.0"
+        uses: android-actions/setup-android@v3
 
-      - name: Extract project
-        run: |
-          mkdir -p android-project
-          unzip -q NothingUPITracker-AndroidStudio.zip -d android-project
+      - name: Install Android SDK
+        run: sdkmanager "platforms;android-36" "build-tools;36.0.0"
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.11.1'
 
-      - name: Build APK
-        working-directory: android-project
-        run: gradle --no-daemon assembleDebug
+      - name: Build Debug APK
+        run: gradle --no-daemon :app:assembleDebug
 
-      - name: Upload APK
+      - name: Upload Debug APK
         uses: actions/upload-artifact@v4
         with:
-          name: Nothing-UPI-Tracker-APK
-          path: android-project/app/build/outputs/apk/debug/*.apk
+          name: DotLedger-debug
+          path: app/build/outputs/apk/debug/app-debug.apk
+
+      - name: Decode signing keystore
+        if: ${{ github.event_name != 'pull_request' && env.ANDROID_KEYSTORE_BASE64 != '' }}
+        run: |
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" \
+            | sed '/^-----/d' \
+            | tr -d '\r\n ' \
+            | base64 --decode > "$RUNNER_TEMP/dotledger.jks"
+
+      - name: Build Signed Release APK
+        if: ${{ github.event_name != 'pull_request' && env.ANDROID_KEYSTORE_BASE64 != '' }}
+        env:
+          DOTLEDGER_KEYSTORE_PATH: ${{ runner.temp }}/dotledger.jks
+          DOTLEDGER_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          DOTLEDGER_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          DOTLEDGER_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: gradle --no-daemon :app:assembleRelease
+
+      - name: Upload Signed Release APK
+        if: ${{ github.event_name != 'pull_request' && env.ANDROID_KEYSTORE_BASE64 != '' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: DotLedger-signed-release
+          path: app/build/outputs/apk/release/app-release.apk
           if-no-files-found: error
           retention-days: 30
-          
